@@ -1,0 +1,142 @@
+RISULTATI ANALISI - MODELLO PENDIO	MULTIBLOCCO
+	
+Unità di misura
+Intervallo di tempo:	mesi
+Spostamenti in input:	cm
+Spostamenti in output:	cm
+	
+Geometria
+l1	409.71	m
+l2	314.46	m
+h	20.31	m
+β1	5.18	°
+β2	11.66	°
+i	7.99	°
+	
+Parametri geotecnici
+γsat	20.5	kN/m3
+γw	10	kN/m3
+φ'r	13.8	°
+c'	0	kPa
+μ	4.44e+10	kN·month/m2
+φ'strato	0	°
+c'strato	0	kPa
+φ'interfaccia	23	°
+δ	0	°
+	
+Pali
+D	0	m
+Hp	0	m
+interasse	0	m
+n	0	-
+Alpha	0	-
+K*	1.00	-
+	
+Parametri modello
+hs	161.9	mm
+Kt	2.9	1/month
+AN	0.27	-
+	
+Dati falda
+ho	0	m
+Hmin	-1.773	m
+	
+Numero armoniche utilizzate nel calcolo
+Narm	100	-
+	
+Vettore pioggia misurata in mm
+0	5.29880969
+1	0
+2	60.643861
+3	145.188689
+4	35.2514935
+5	69.0915501
+6	58.478599
+7	155.876371
+8	78.7167525
+9	33.5157034
+	
+Vettore falda misurata dal P.C. in m
+0	-1.415712638
+1	-1.035684652
+2	-0.72285213
+3	-0.68184305
+4	-0.73967017
+5	-0.73234487
+6	-0.68431037
+7	-0.54317178
+8	-0.73655364
+9	-0.97832782
+	
+Vettore spostamenti misurati
+0	0
+1	0.0265992
+2	0.338086
+3	0.2474058
+4	0.2482667
+5	0.472252
+6	1.2631318
+7	3.5198739
+8	4.9085161
+9	5.1125686
+	
+Vettore falda calcolata dal P.C. in m
+0	-1.75
+1	-1.76
+2	-1.54
+3	-1.08
+4	-1.18
+5	-1.12
+6	-1.12
+7	-0.76
+8	-0.8
+9	-1
+	
+Vettore velocità in m/s
+0	0
+1	0
+2	0
+3	0
+4	5.24594048729034E-09
+5	6.15617006187117E-09
+6	5.07180017671316E-09
+7	7.97959858010864E-09
+8	1.1214945015148E-09
+9	0
+	
+Vettore spostamenti calcolati
+0	0
+1	0
+2	0
+3	0
+4	1.35974777430566
+5	2.95542705434266
+6	4.27003766014672
+7	6.33834961211087
+8	6.62904098690351
+9	6.62904098690351
+	
+Vettore altezza critica falda dal livrif in m
+0	-1.25539799660499
+1	-1.25539799660499
+2	-1.25539799660499
+3	-1.25539799660499
+4	-1.25539799660499
+5	-1.25539799660499
+6	-1.25539799660499
+7	-1.25539799660499
+8	-1.25539799660499
+9	-1.25539799660499
+	
+Vettore fattore di sicurezza FS
+0	1
+1	1
+2	1
+3	1
+4	1
+5	1
+6	1
+7	1
+8	1
+9	1
+	

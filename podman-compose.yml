@@ -1,0 +1,31 @@
+services:
+  db:
+    image: docker.io/library/postgres:16-alpine
+    environment:
+      POSTGRES_DB: mode2_db
+      POSTGRES_USER: mode2_user
+      POSTGRES_PASSWORD: mode2_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mode2_user -d mode2_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: .
+      dockerfile: Containerfile
+    ports:
+      - "8001:8000"
+    environment:
+      DATABASE_URL: postgres://mode2_user:mode2_password@db:5432/mode2_db
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - .:/app
+
+volumes:
+  postgres_data:

@@ -1,0 +1,13 @@
+[project]
+name = "apland-pis-mode2"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "djangorestframework>=3.16.1",
+    "pythonnet>=3.0.5",
+    "pandas>=2.2.0",
+    "psycopg2-binary>=2.9.9",
+    "dj-database-url>=2.1.0",
+]
