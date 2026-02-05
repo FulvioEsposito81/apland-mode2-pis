@@ -6,10 +6,15 @@ from rest_framework import status
 from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.decorators import api_view
 
 from .importers import import_data
 from .validators import validate_data_file
 
+
+@api_view(['GET'])
+def health(request):
+    return Response()
 
 class DataValidateView(APIView):
     """

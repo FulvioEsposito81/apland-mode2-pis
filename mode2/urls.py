@@ -18,8 +18,10 @@ from django.contrib import admin
 from django.urls import include, path
 
 from mode2.api.function_views import CalibrateView, PrevisionView
+from mode2.api.views import health
 
 urlpatterns = [
+    path('/', health),
     path('admin/', admin.site.urls),
     path('datasets/', include('mode2.api.urls')),
     path('functions/calibrate/', CalibrateView.as_view(), name='calibrate'),
