@@ -54,7 +54,7 @@ def validate_data_file(file_content: str | bytes) -> ValidationResult:
     - Tab-delimited, no headers
     - Column 1: Integer index (0-11)
     - Column 2: Float with comma decimal separator
-    - Exactly 12 rows
+    - At least 1 row
 
     Args:
         file_content: The file content as string or bytes
@@ -86,11 +86,12 @@ def validate_data_file(file_content: str | bytes) -> ValidationResult:
     lines = [line.strip() for line in file_content.strip().split('\n') if line.strip()]
 
     # Check row count
-    if len(lines) != 12:
+    if len(lines) < 1:
         result.add_error(
-            f"Il file deve contenere esattamente 12 righe. Trovate: {len(lines)}",
-            f"File must contain exactly 12 rows. Found: {len(lines)}"
+            "Il file deve contenere almeno una riga.",
+            "File must contain at least one row."
         )
+        return result
 
     # Parse and validate each row
     parsed_data = []

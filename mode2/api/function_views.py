@@ -22,6 +22,57 @@ def format_array_as_indexed(values: list[float]) -> list[dict[str, float]]:
     return [{'index': i, 'value': val} for i, val in enumerate(values)]
 
 
+def interpolate_to_integer_grid(
+    data: list[tuple[int, float]], grid_size: int
+) -> list[float]:
+    """Interpolate (index, value) data onto an integer grid [0, 1, ..., grid_size-1].
+
+    Replicates the C# CalcolaVettoriMetodo / InterpolazioneLineare preprocessing
+    that aligns displacement data to the water table time grid before computation.
+
+    For each integer time point, linearly interpolates between the bracketing
+    data points. Points beyond the data range use the nearest boundary value.
+
+    Args:
+        data: List of (index, value) tuples, sorted by index ascending.
+        grid_size: Number of integer grid points to produce.
+
+    Returns:
+        List of interpolated values at [0, 1, ..., grid_size-1].
+    """
+    if not data:
+        return [0.0] * grid_size
+
+    x_vals = [float(idx) for idx, _ in data]
+    y_vals = [val for _, val in data]
+
+    result = []
+    for i in range(grid_size):
+        x = float(i)
+
+        # Clamp to data range
+        if x <= x_vals[0]:
+            result.append(y_vals[0])
+            continue
+        if x >= x_vals[-1]:
+            result.append(y_vals[-1])
+            continue
+
+        # Find bracketing interval: x_vals[k-1] <= x < x_vals[k]
+        k = 0
+        while k < len(x_vals) and x_vals[k] <= x:
+            k += 1
+
+        x0, y0 = x_vals[k - 1], y_vals[k - 1]
+        x1, y1 = x_vals[k], y_vals[k]
+
+        # Linear interpolation (matches C# formula)
+        y = y0 * (x - x1) / (x0 - x1) + y1 * (x - x0) / (x1 - x0)
+        result.append(y)
+
+    return result
+
+
 class CalibrateView(APIView):
     """
     Water table calibration endpoint.
@@ -157,6 +208,7 @@ class CalibrateView(APIView):
                     an=calibrated_params['an'],
                     ho=calibrated_params['ho'],
                     hmin=calibrated_params['hmin'],
+                    alpha=geometry['i_pc'],
                 )
 
             return Response({
@@ -292,7 +344,18 @@ class PrevisionView(APIView):
 
         # Extract values
         rainfall_values = [v for _, v in rainfall_data]
-        displacement_values = [v for _, v in displacement_data]
+
+        # Displacement unit conversion factors
+        # The imported displacement data is in user units; computation works in meters
+        displacement_unit = request.data.get('displacement_unit', 'cm')
+        unit_to_meters = {'mm': 0.001, 'cm': 0.01, 'm': 1.0}
+        molt_spost = unit_to_meters.get(displacement_unit, 0.01)
+        molt_out_spost = 1.0 / molt_spost
+
+        # Time unit → seconds per time step (matches C# UnitaDiMisura)
+        time_unit = request.data.get('time_unit', 'mesi')
+        time_unit_to_sec = {'giorni': 86400.0, 'mesi': 2592000.0, 'anni': 31104000.0}
+        sec = time_unit_to_sec.get(time_unit, 2592000.0)
 
         # Calculate water table with model parameters
         try:
@@ -306,10 +369,21 @@ class PrevisionView(APIView):
                 an=model_params['an'],
                 ho=model_params['ho'],
                 hmin=model_params['hmin'],
+                alpha=geometry['i_pc'],
             )
 
-            # Time array (indices)
+            # Time array (indices) — defines the computation grid
             time_array = [float(i) for i in range(len(rainfall_data))]
+            n_time = len(time_array)
+
+            # Interpolate displacement data to the integer time grid.
+            # This matches the C# CalcolaVettoriMetodo / InterpolazioneLineare
+            # preprocessing: displacement measurements may have different time
+            # points or gaps, so they must be linearly interpolated to the same
+            # integer grid [0, 1, ..., N-1] used by rainfall and water table.
+            displacement_values = interpolate_to_integer_grid(
+                displacement_data, n_time
+            )
 
             # Run prevision
             result = calculator.run_prevision(
@@ -321,16 +395,28 @@ class PrevisionView(APIView):
                 displacement_measured=displacement_values,
                 num_harmonics=num_harmonics,
                 calculate_viscosity=(prevision_type == 'best_fit_viscosity'),
+                molt_spost=molt_spost,
+                molt_out_spost=molt_out_spost,
+                sec=sec,
             )
+
+            # Post-process results to match original C# application:
+            # 1. Convert displacement from meters to user display unit
+            disp_calc = [v * molt_out_spost for v in result['displacement_calculated']]
+            # 2. Convert critical water table: subtract h to get depth below surface (zw)
+            #    Raw hwcrit is absolute height above sliding surface base;
+            #    subtracting h gives negative depth below ground surface
+            h = geometry['h']
+            critical_wt = [v - h for v in result['critical_water_table']]
 
             response = {
                 'success': True,
                 'results': {
-                    'time': format_array_as_indexed(result['time']),
-                    'displacement_calculated': format_array_as_indexed(result['displacement_calculated']),
+                    'time': format_array_as_indexed(time_array),
+                    'displacement_calculated': format_array_as_indexed(disp_calc),
                     'displacement_measured': format_indexed_data(displacement_data),
                     'velocity': format_array_as_indexed(result['velocity']),
-                    'critical_water_table': format_array_as_indexed(result['critical_water_table']),
+                    'critical_water_table': format_array_as_indexed(critical_wt),
                     'safety_factor': format_array_as_indexed(result['safety_factor']),
                     'water_table_calculated': format_array_as_indexed(calculated_wt),
                     'water_table_measured': format_indexed_data(water_table_data),

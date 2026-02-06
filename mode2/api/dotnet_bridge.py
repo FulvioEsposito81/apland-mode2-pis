@@ -24,8 +24,13 @@ class DotNetError(Exception):
         super().__init__(message_en)
 
 
-def _ensure_assembly_loaded() -> None:
-    """Load the MODE II .NET assembly if not already loaded."""
+def _load_assembly_types() -> tuple[Any, Any]:
+    """Load the MODE II .NET assembly and return the calculation types.
+
+    Returns the types directly via assembly reflection to avoid triggering
+    a full namespace import, which fails because the assembly also contains
+    GUI types that depend on System.Windows.Forms (not available on Linux).
+    """
     if not MODE2_EXE_PATH.exists():
         raise DotNetError(
             "Assembly MODE II non trovato.",
@@ -33,8 +38,20 @@ def _ensure_assembly_loaded() -> None:
             f"Expected at: {MODE2_EXE_PATH}"
         )
 
-    # Add reference to the assembly
-    clr.AddReference(str(MODE2_EXE_PATH))
+    assembly = clr.AddReference(str(MODE2_EXE_PATH))
+
+    from System import Activator
+
+    elab_type = assembly.GetType('ProgrammaMultiblocco.CElaboration')
+    elab_multi_type = assembly.GetType('ProgrammaMultiblocco.CElaboration_Multiblocco')
+
+    if elab_type is None or elab_multi_type is None:
+        raise DotNetError(
+            "Tipi di calcolo non trovati nell'assembly.",
+            "Calculation types not found in assembly.",
+        )
+
+    return Activator.CreateInstance(elab_type), Activator.CreateInstance(elab_multi_type)
 
 
 def _convert_to_dotnet_array(values: list[float]) -> Any:
@@ -52,12 +69,25 @@ def _convert_from_dotnet_array(dotnet_array: Any) -> list[float]:
 
 
 def _convert_from_dotnet_2d_array(dotnet_array: Any, rows: int, cols: int) -> list[list[float]]:
-    """Convert .NET 2D array to Python list of lists."""
+    """Convert .NET rectangular 2D array (Double[,]) to Python list of lists."""
     result = []
     for i in range(rows):
         row = []
         for j in range(cols):
             row.append(float(dotnet_array[i, j]))
+        result.append(row)
+    return result
+
+
+def _convert_from_dotnet_jagged_array(dotnet_array: Any, rows: int) -> list[list[float]]:
+    """Convert .NET jagged array (Double[][]) to Python list of lists.
+
+    Each inner array may have a different length (true jagged array).
+    """
+    result = []
+    for i in range(rows):
+        inner = dotnet_array[i]
+        row = [float(inner[j]) for j in range(inner.Length)]
         result.append(row)
     return result
 
@@ -71,16 +101,15 @@ class Mode2Calculator:
 
     def __init__(self):
         """Initialize the calculator and load the .NET assembly."""
-        _ensure_assembly_loaded()
-        from ProgrammaMultiblocco import CElaboration, CElaboration_Multiblocco
-        self._elaboration = CElaboration
-        self._elaboration_multiblocco = CElaboration_Multiblocco
+        elab, elab_multi = _load_assembly_types()
+        self._elaboration = elab
+        self._elaboration_multiblocco = elab_multi
 
     def calibrate_water_table_auto(
         self,
         rainfall: list[float],
         water_table_measured: list[float],
-        geometry: dict[str, float],  # noqa: ARG002 - reserved for future use
+        geometry: dict[str, float],
     ) -> dict[str, Any]:
         """
         Perform automatic water table calibration (Best Fit Pioggia).
@@ -90,7 +119,7 @@ class Mode2Calculator:
         Args:
             rainfall: List of rainfall values (mm)
             water_table_measured: List of measured water table values (m from ground)
-            geometry: Dictionary with keys 'l1', 'l2', 'h', 'beta1', 'beta2', 'i_pc' (reserved for future use)
+            geometry: Dictionary with keys 'l1', 'l2', 'h', 'beta1', 'beta2', 'i_pc'
 
         Returns:
             Dictionary with calibrated parameters:
@@ -111,7 +140,7 @@ class Mode2Calculator:
             h = water_table_measured[0]
             ho = 0.0
             hmin = min(water_table_measured)
-            alpha = 1.0
+            alpha = geometry['i_pc']  # slope angle in degrees
 
             # X array (time indices)
             x_arr = _convert_to_dotnet_array([float(i) for i in range(n)])
@@ -121,8 +150,8 @@ class Mode2Calculator:
             an_init = 0.27
             hs_init = max(rainfall)
 
-            # Call .NET method
-            result = self._elaboration.MetBestFitPioggia(
+            # Call .NET method — returns Double[] {AN, Kt, hs} (optimized params)
+            params = self._elaboration.MetBestFitPioggia(
                 h,           # h
                 ho,          # ho
                 hmin,        # Hmin
@@ -135,16 +164,26 @@ class Mode2Calculator:
                 hs_init      # hs initial
             )
 
-            # The result is an array with calculated water table values
-            calculated_wt = _convert_from_dotnet_array(result)
+            # Extract optimized parameters from result array
+            an_opt = float(params[0])
+            kt_opt = float(params[1])
+            hs_opt = float(params[2])
 
-            # Extract optimized parameters from the calculation
-            # Note: The actual optimized parameters would be obtained from the fitting process
-            # For now, we return the calculated water table and the input parameters
+            # Calculate water table with optimized parameters
+            calculated_wt = self.calculate_water_table(
+                rainfall=rainfall,
+                hs=hs_opt,
+                kt=kt_opt,
+                an=an_opt,
+                ho=ho,
+                hmin=hmin,
+                alpha=alpha,
+            )
+
             return {
-                'hs': hs_init,
-                'kt': kt_init,
-                'an': an_init,
+                'hs': hs_opt,
+                'kt': kt_opt,
+                'an': an_opt,
                 'ho': ho,
                 'hmin': hmin,
                 'calculated_water_table': calculated_wt,
@@ -165,6 +204,7 @@ class Mode2Calculator:
         an: float,
         ho: float,
         hmin: float,
+        alpha: float = 7.99,
     ) -> list[float]:
         """
         Calculate water table with provided calibration parameters.
@@ -176,29 +216,25 @@ class Mode2Calculator:
             an: Dimensionless coefficient
             ho: Initial water table offset (m)
             hmin: Minimum water table level (m)
+            alpha: Ground surface inclination angle (degrees)
 
         Returns:
             List of calculated water table values (m from ground)
         """
         try:
-            rainfall_arr = _convert_to_dotnet_array(rainfall)
             n = len(rainfall)
             x_arr = _convert_to_dotnet_array([float(i) for i in range(n)])
+            rainfall_arr = _convert_to_dotnet_array(rainfall)
 
-            # Placeholder water table array for the calculation
-            placeholder_wt = _convert_to_dotnet_array([hmin] * n)
-
-            result = self._elaboration.MetBestFitPioggia(
-                hmin,        # h (starting water table)
+            result = self._elaboration.CalcolaPioggiaFOR(
                 ho,          # ho
                 hmin,        # Hmin
-                1.0,         # alpha
-                rainfall_arr,      # PYInterpLin
-                placeholder_wt,    # FYInterpLin
-                x_arr,       # X
+                alpha,       # alpha (slope angle in degrees)
+                hs,          # hs
                 kt,          # Kt
                 an,          # AN
-                hs           # hs
+                x_arr,       # PX (time indices)
+                rainfall_arr # PY (rainfall values)
             )
 
             return _convert_from_dotnet_array(result)
@@ -220,6 +256,9 @@ class Mode2Calculator:
         displacement_measured: list[float],
         num_harmonics: int = 100,
         calculate_viscosity: bool = False,
+        molt_spost: float = 1.0,
+        molt_out_spost: float = 1.0,
+        sec: float = 2592000.0,
     ) -> dict[str, Any]:
         """
         Run slope stability prevision calculation.
@@ -238,16 +277,17 @@ class Mode2Calculator:
             model_params: Dictionary with keys 'hs', 'kt', 'an', 'ho', 'hmin' (reserved for future use)
             time_array: List of time values
             water_table_calculated: List of calculated water table values
-            displacement_measured: List of measured displacement values
+            displacement_measured: List of measured displacement values (in user units)
             num_harmonics: Number of harmonics for Fourier analysis
-            calculate_viscosity: If True, also compute best-fit viscosity
+            calculate_viscosity: If True, use MetodoBestFitting_MultiBloc for best-fit viscosity
+            molt_spost: Input displacement unit conversion factor (user units -> meters)
+            molt_out_spost: Output displacement unit conversion factor (meters -> user units)
 
         Returns:
             Dictionary with results:
-            - time: List of time values
-            - displacement_calculated: List of calculated displacements
-            - velocity: List of velocity values
-            - critical_water_table: List of critical water table values
+            - displacement_calculated: List of calculated displacements (in meters)
+            - velocity: List of velocity values (m/s)
+            - critical_water_table: List of critical water table heights (absolute, in meters)
             - safety_factor: List of safety factor values
             - mu (optional): Calibrated viscosity coefficient
         """
@@ -273,64 +313,81 @@ class Mode2Calculator:
             D = 0.0   # pile diameter
             interasse = 0.0  # pile spacing
             Hp = 0.0  # pile height
-            n1 = 0    # number of piles row 1
-            n2 = 0    # number of piles row 2
-            sec = 0.0
+            n1 = 0.0    # number of piles row 1
+            n2 = 0.0    # number of piles row 2
+            # sec is seconds per time step, passed from caller
             alpha = phi_interface  # use interface friction angle for alpha
             phi_strato = 0.0
             OCR = 1.0
             c_strato = 0.0
 
+            # Convert measured displacement to meters for computation
+            displacement_in_meters = [v * molt_spost for v in displacement_measured]
+
             # Convert to .NET arrays
             time_arr = _convert_to_dotnet_array(time_array)
             falda_calc_arr = _convert_to_dotnet_array(water_table_calculated)
             spost_x_arr = _convert_to_dotnet_array(time_array)  # X-axis is time
-            spost_y_arr = _convert_to_dotnet_array(displacement_measured)
+            spost_y_arr = _convert_to_dotnet_array(displacement_in_meters)
 
-            # Calculate viscosity if requested
-            calibrated_mu = None
+            # Additional parameters for CElaboration.CalcoloPendio (non-piled slopes)
+            deltap1 = 0.0
+            phi_interfaccia = phi_interface
+
             if calculate_viscosity:
-                calibrated_mu = self._elaboration.CalcoloCoeffVisc(
+                # Use MetodoBestFitting_MultiBloc for full best-fit workflow:
+                # 1. Runs CalcoloPendio with mu=10^9 (ideal, no damping)
+                # 2. Scales mu proportionally to match measured displacement
+                # 3. Fine-tunes with CalcoloCoeffVisc grid search
+                # 4. Runs final CalcoloPendio with optimized mu
+                spost_y_misu_arr = _convert_to_dotnet_array(displacement_measured)
+
+                result = self._elaboration_multiblocco.MetodoBestFitting_MultiBloc(
                     l1, l2, h, beta1, beta2, i_pc,
                     gamma_sat, fi, c, mu,
                     gamma_w, g, D, interasse, Hp, n1, n2,
                     time_arr, falda_calc_arr,
                     spost_x_arr, spost_y_arr,
                     sec, alpha, phi_strato, OCR, c_strato,
-                    num_harmonics
+                    num_harmonics,
+                    spost_y_misu_arr, molt_out_spost, molt_spost
                 )
-                mu = calibrated_mu
+                # MetodoBestFitting_MultiBloc returns Double[,] (rectangular)
+                n_points = len(time_array)
+                result_matrix = _convert_from_dotnet_2d_array(result, 5, n_points)
+            else:
+                # Standard analysis: use CElaboration.CalcoloPendio (29 params)
+                # matching the original C# Form1.btnAnalisiCsharp_Click flow
+                result = self._elaboration.CalcoloPendio(
+                    l1, l2, h, beta1, beta2, i_pc,
+                    gamma_sat, fi, c, mu,
+                    gamma_w, g, D, interasse, Hp, n1, n2,
+                    time_arr, falda_calc_arr,
+                    spost_x_arr, spost_y_arr,
+                    sec, alpha, phi_strato, OCR, c_strato,
+                    num_harmonics,
+                    deltap1, phi_interfaccia
+                )
+                # CElaboration.CalcoloPendio returns Double[][] (jagged)
+                result_matrix = _convert_from_dotnet_jagged_array(result, 5)
 
-            # Run slope calculation
-            result = self._elaboration_multiblocco.CalcoloPendio(
-                l1, l2, h, beta1, beta2, i_pc,
-                gamma_sat, fi, c, mu,
-                gamma_w, g, D, interasse, Hp, n1, n2,
-                time_arr, falda_calc_arr,
-                spost_x_arr, spost_y_arr,
-                sec, alpha, phi_strato, OCR, c_strato,
-                num_harmonics
-            )
-
-            # Result is a 2D array [5, N]:
-            # Row 0: Time
-            # Row 1: Displacement
-            # Row 2: Velocity
-            # Row 3: Critical water table
-            # Row 4: Safety factor
-            n_points = len(time_array)
-            result_matrix = _convert_from_dotnet_2d_array(result, 5, n_points)
+            # Result matrix [5, N]:
+            # Row 0: Horizontal displacement = cos(beta1) * cumulative displacement
+            # Row 1: Critical water height (hwcrit, absolute above sliding surface)
+            # Row 2: Horizontal velocity = cos(beta1) * velocity
+            # Row 3: Safety factor
+            # Row 4: Summary metrics [MaxSpost, Error, Ks1, deltap1, ca1, mu, ...]
 
             response = {
-                'time': result_matrix[0],
-                'displacement_calculated': result_matrix[1],
+                'displacement_calculated': result_matrix[0],
+                'critical_water_table': result_matrix[1],
                 'velocity': result_matrix[2],
-                'critical_water_table': result_matrix[3],
-                'safety_factor': result_matrix[4],
+                'safety_factor': result_matrix[3],
             }
 
-            if calibrated_mu is not None:
-                response['mu'] = calibrated_mu
+            if calculate_viscosity:
+                # Calibrated mu is stored at row 4, index 5
+                response['mu'] = result_matrix[4][5] if len(result_matrix[4]) > 5 else mu
 
             return response
 
