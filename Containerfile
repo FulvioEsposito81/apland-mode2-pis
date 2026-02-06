@@ -15,6 +15,7 @@ RUN wget https://dot.net/v1/dotnet-install.sh -O dotnet-install.sh \
     && ln -s /usr/share/dotnet/dotnet /usr/bin/dotnet
 
 ENV DOTNET_ROOT=/usr/share/dotnet
+ENV PYTHONNET_RUNTIME=coreclr
 
 WORKDIR /app
 RUN pip install uv

@@ -18,7 +18,7 @@ services:
       context: .
       dockerfile: Containerfile
     ports:
-      - "8001:8000"
+      - "8000:8000"
     environment:
       DATABASE_URL: postgres://mode2_user:mode2_password@db:5432/mode2_db
     depends_on:
