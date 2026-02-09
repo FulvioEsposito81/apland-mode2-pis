@@ -8,7 +8,20 @@ calibration and prevision calculations.
 from pathlib import Path
 from typing import Any
 
-import clr  # pythonnet  # noqa: F401 - loaded at runtime
+# Configure pythonnet to use CoreCLR before importing clr
+import pythonnet
+
+# Explicitly load CoreCLR runtime (required for .NET Core/.NET 5+)
+# This must be done before importing clr
+try:
+    pythonnet.load("coreclr")
+except Exception as e:
+    raise RuntimeError(
+        f"Failed to load CoreCLR runtime. Ensure .NET runtime is installed and "
+        f"DOTNET_ROOT environment variable is set. Error: {e}"
+    ) from e
+
+import clr  # noqa: F401 - loaded at runtime
 
 # Path to the MODE II .NET executable
 MODE2_EXE_PATH = Path(__file__).parent.parent.parent / 'mode2.exe'
