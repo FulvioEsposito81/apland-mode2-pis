@@ -78,10 +78,16 @@ WSGI_APPLICATION = 'mode2.wsgi.application'
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
 DATABASES = {
-    'default': dj_database_url.config(
-        default='sqlite:///' + str(BASE_DIR / 'db.sqlite3'),
-        conn_max_age=600,
-    )
+    "default": {
+        "ENGINE": "django.db.backends.{}".format(
+            os.getenv("DATABASE_ENGINE", "sqlite3")
+        ),
+        "NAME": os.getenv("DATABASE_NAME", "apland.sqlite3"),
+        "USER": os.getenv("DATABASE_USERNAME", "apland-user"),
+        "PASSWORD": os.getenv("DATABASE_PASSWORD", "apland-pwd"),
+        "HOST": os.getenv("DATABASE_HOST", "127.0.0.1"),
+        "PORT": os.getenv("DATABASE_PORT", 5432),
+    }
 }
 
 
