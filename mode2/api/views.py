@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.decorators import api_view
 
+from .capabilities import CAPABILITIES
 from .importers import import_data
 from .validators import validate_data_file
 
@@ -15,6 +16,11 @@ from .validators import validate_data_file
 @api_view(['GET'])
 def health(request):
     return Response()
+
+
+@api_view(['GET'])
+def capabilities(request):
+    return Response(CAPABILITIES)
 
 class DataValidateView(APIView):
     """
