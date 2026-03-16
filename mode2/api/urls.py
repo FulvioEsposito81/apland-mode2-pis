@@ -8,6 +8,11 @@ from .views import DataImportView, DataValidateView
 
 urlpatterns = [
     path(
+        'datasets/<str:dataset_ref_name>/data/<str:data_ref_name>/validate',
+        DataValidateView.as_view(),
+        name='data-validate'
+    ),
+    path(
         '<str:dataset_ref_name>/<uuid:uuid>/data/<str:data_ref_name>/validate',
         DataValidateView.as_view(),
         name='data-validate'
