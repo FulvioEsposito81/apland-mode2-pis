@@ -2,8 +2,10 @@
 API views for MODE II data validation and import.
 """
 
+import os
+
 from rest_framework import status
-from rest_framework.parsers import MultiPartParser
+from rest_framework.parsers import JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.decorators import api_view
@@ -29,7 +31,7 @@ class DataValidateView(APIView):
     POST /<dataset_ref_name>/<uuid>/data/<data_ref_name>/validate
     POST /<dataset_ref_name>/data/<data_ref_name>/validate
 
-    Accepts multipart/form-data with a 'file' field containing the data file.
+    Accepts application/json with a 'file' field containing a path relative to /mnt/data/.
 
     Returns:
         {
@@ -40,18 +42,18 @@ class DataValidateView(APIView):
         }
     """
 
-    parser_classes = [MultiPartParser]
+    parser_classes = [JSONParser]
 
     def post(self, request, dataset_ref_name: str, data_ref_name: str):
-        # Check for file in request
-        if 'file' not in request.FILES:
+        file_path = request.data.get('file')
+        if not file_path:
             return Response(
                 {
                     'valid': False,
                     'errors': [
                         {
-                            'it': "Nessun file caricato. Utilizzare il campo 'file'.",
-                            'en': "No file uploaded. Use the 'file' field."
+                            'it': "Campo 'file' mancante nel corpo della richiesta.",
+                            'en': "Missing 'file' field in request body."
                         }
                     ],
                     'warnings': [],
@@ -59,8 +61,24 @@ class DataValidateView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        uploaded_file = request.FILES['file']
-        file_content = uploaded_file.read()
+        full_path = os.path.join('/mnt/data', file_path)
+        try:
+            with open(full_path, 'rb') as f:
+                file_content = f.read()
+        except FileNotFoundError:
+            return Response(
+                {
+                    'valid': False,
+                    'errors': [
+                        {
+                            'it': f"File non trovato: {file_path}",
+                            'en': f"File not found: {file_path}"
+                        }
+                    ],
+                    'warnings': [],
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         # Validate the file
         result = validate_data_file(file_content)
