@@ -27,6 +27,7 @@ class DataValidateView(APIView):
     Validate a MODE II data file without importing.
 
     POST /<dataset_ref_name>/<uuid>/data/<data_ref_name>/validate
+    POST /<dataset_ref_name>/data/<data_ref_name>/validate
 
     Accepts multipart/form-data with a 'file' field containing the data file.
 
@@ -41,7 +42,7 @@ class DataValidateView(APIView):
 
     parser_classes = [MultiPartParser]
 
-    def post(self, request, dataset_ref_name: str, uuid, data_ref_name: str):
+    def post(self, request, dataset_ref_name: str, data_ref_name: str):
         # Check for file in request
         if 'file' not in request.FILES:
             return Response(
