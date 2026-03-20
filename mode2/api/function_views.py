@@ -2,6 +2,7 @@
 API views for MODE II calibration and prevision functions.
 """
 
+import math
 from uuid import UUID
 
 from rest_framework import status
@@ -12,14 +13,21 @@ from .data_retrieval import DataNotFoundError, check_required_data, get_imported
 from .dotnet_bridge import DotNetError, get_calculator
 
 
+def _safe_float(v: float) -> float | None:
+    """Return None for NaN/Inf values that are not JSON-serializable."""
+    if math.isnan(v) or math.isinf(v):
+        return None
+    return v
+
+
 def format_indexed_data(data: list[tuple[int, float]]) -> list[dict[str, float]]:
     """Format (index, value) tuples as list of dicts for JSON response."""
-    return [{'index': idx, 'value': val} for idx, val in data]
+    return [{'index': idx, 'value': _safe_float(val)} for idx, val in data]
 
 
 def format_array_as_indexed(values: list[float]) -> list[dict[str, float]]:
     """Format a list of values as indexed dicts for JSON response."""
-    return [{'index': i, 'value': val} for i, val in enumerate(values)]
+    return [{'index': i, 'value': _safe_float(val)} for i, val in enumerate(values)]
 
 
 def interpolate_to_integer_grid(
