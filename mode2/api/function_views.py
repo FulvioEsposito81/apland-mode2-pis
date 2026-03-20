@@ -319,6 +319,12 @@ class PrevisionView(APIView):
                     'it': f"Parametri modello mancanti: {', '.join(missing)}",
                     'en': f"Missing model parameters: {', '.join(missing)}"
                 })
+            null_params = [k for k in required_mp if k in model_params and model_params[k] is None]
+            if null_params:
+                errors.append({
+                    'it': "Parametri modello non validi, eseguire prima la calibrazione.",
+                    'en': "Model parameters are null, run calibration first.",
+                })
 
         analysis_settings = request.data.get('analysis_settings', {})
         num_harmonics = analysis_settings.get('num_harmonics', 100)
